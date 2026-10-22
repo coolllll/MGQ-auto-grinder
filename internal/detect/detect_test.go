@@ -148,6 +148,56 @@ func TestClassifyFixtures(t *testing.T) {
 	}
 }
 
+func loadFixture(t *testing.T, name string) *image.RGBA {
+	t.Helper()
+	img, err := LoadPNG(filepath.Join("testdata", name))
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skipf("fixture %s not captured", name)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return img
+}
+
+func TestSetMapReference(t *testing.T) {
+	battleRef := loadFixture(t, "battle.png")
+	maps := []string{"map.png", "map_scrolled.png"}
+	battles := []string{"battle.png", "battle_command.png", "battle_victory.png"}
+
+	c := NewClassifier(Refs{Battle: battleRef}, DefaultParams())
+	for _, f := range maps {
+		if got := c.Classify(loadFixture(t, f)); got == Map {
+			t.Errorf("without a map reference, %s classified MAP", f)
+		}
+	}
+
+	c.SetMapReference(loadFixture(t, "map.png"))
+	for _, f := range maps {
+		if got := c.Classify(loadFixture(t, f)); got != Map {
+			t.Errorf("after SetMapReference, %s = %v, want MAP", f, got)
+		}
+	}
+	for _, f := range battles {
+		if got := c.Classify(loadFixture(t, f)); got != Battle {
+			t.Errorf("after SetMapReference, %s = %v, want BATTLE", f, got)
+		}
+	}
+}
+
+// TestSameSpotReferenceMargin checks that a map reference taken where the user
+// grinds leaves a wide margin: the default-size run scored only 0.63-0.69
+// against a reference taken elsewhere.
+func TestSameSpotReferenceMargin(t *testing.T) {
+	c := NewClassifier(Refs{Battle: loadFixture(t, "battle.png")}, DefaultParams())
+	c.SetMapReference(loadFixture(t, "map.png"))
+	s := c.Score(loadFixture(t, "map_scrolled.png"))
+	t.Logf("map_scrolled vs same-spot reference: map=%.3f (threshold %.2f)", s.Map, DefaultParams().MapMinSimilarity)
+	if s.Map < 0.75 {
+		t.Errorf("map similarity %.3f, want >= 0.75", s.Map)
+	}
+}
+
 func TestRefsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := LoadRefs(dir); !errors.Is(err, ErrMissingRefs) {
@@ -159,6 +209,15 @@ func TestRefsRoundTrip(t *testing.T) {
 	if _, err := LoadRefs(dir); !errors.Is(err, ErrMissingRefs) {
 		t.Fatalf("LoadRefs with only map: err = %v, want ErrMissingRefs", err)
 	}
+
+	battleOnly := t.TempDir()
+	if _, err := SaveRef(battleOnly, Battle, syntheticBattle(color.RGBA{1, 2, 3, 255})); err != nil {
+		t.Fatal(err)
+	}
+	if refs, err := LoadRefs(battleOnly); err != nil || refs.Battle == nil || refs.Map != nil {
+		t.Fatalf("LoadRefs with only battle: refs=%+v err=%v, want battle and no map", refs, err)
+	}
+
 	if _, err := SaveRef(dir, Battle, syntheticBattle(color.RGBA{1, 2, 3, 255})); err != nil {
 		t.Fatal(err)
 	}

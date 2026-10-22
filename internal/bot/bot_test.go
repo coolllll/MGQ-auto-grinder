@@ -216,20 +216,118 @@ func TestFocusLossReleasesKeysAndKeepsRunning(t *testing.T) {
 type fakeWindow struct {
 	exists, foreground bool
 	captureErr         error
+	captures           int
 }
 
 func (w *fakeWindow) Exists() bool       { return w.exists }
 func (w *fakeWindow) IsForeground() bool { return w.foreground }
+
+// Capture returns a 1x1 frame whose red channel is the capture count, so tests
+// can tell frames apart.
 func (w *fakeWindow) Capture() (image.Image, error) {
 	if w.captureErr != nil {
 		return nil, w.captureErr
 	}
-	return image.NewRGBA(image.Rect(0, 0, 1, 1)), nil
+	w.captures++
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Pix[0] = uint8(w.captures)
+	return img, nil
 }
+
+func frameID(img image.Image) uint8 { return img.(*image.RGBA).Pix[0] }
 
 type fixedClassifier detect.State
 
 func (c fixedClassifier) Classify(image.Image) detect.State { return detect.State(c) }
+func (c fixedClassifier) SetMapReference(image.Image)       {}
+
+// recordingClassifier remembers its map reference and reports MAP once it has
+// one, and NEITHER before that.
+type recordingClassifier struct {
+	mapRef image.Image
+	sets   int
+}
+
+func (c *recordingClassifier) SetMapReference(img image.Image) { c.mapRef = img; c.sets++ }
+func (c *recordingClassifier) Classify(image.Image) detect.State {
+	if c.mapRef == nil {
+		return detect.Neither
+	}
+	return detect.Map
+}
+
+func newPausedRunner() (*Runner, *recorder, *fakeWindow, *recordingClassifier) {
+	r := &recorder{}
+	w := &fakeWindow{exists: true, foreground: true}
+	cls := &recordingClassifier{}
+	return &Runner{Bot: New(cfg, r, r), Win: w, Cls: cls}, r, w, cls
+}
+
+func TestRunnerStartTakesMapReferenceFirst(t *testing.T) {
+	run, r, w, cls := newPausedRunner()
+	var saved image.Image
+	run.OnMapReference = func(img image.Image) { saved = img }
+
+	run.Toggle()
+	if run.Bot.Mode() != Running {
+		t.Fatalf("mode = %v after start, want RUNNING", run.Bot.Mode())
+	}
+	if cls.sets != 1 || frameID(cls.mapRef) != 1 {
+		t.Fatalf("map reference set %d times (frame %v), want once with the first capture", cls.sets, cls.mapRef)
+	}
+	if saved == nil || frameID(saved) != 1 {
+		t.Errorf("OnMapReference got %v, want the captured frame", saved)
+	}
+
+	// The first step already sees MAP, because the reference was set first.
+	if err := run.Tick(at(0)); err != nil {
+		t.Fatal(err)
+	}
+	wantKeys(t, r, "down Left")
+
+	captures := w.captures
+	run.Toggle()
+	if run.Bot.Mode() != Paused {
+		t.Fatalf("mode = %v after pause, want PAUSED", run.Bot.Mode())
+	}
+	if w.captures != captures || cls.sets != 1 {
+		t.Errorf("pausing captured or replaced the map reference")
+	}
+	wantKeys(t, r, "up Left")
+}
+
+func TestRunnerStartCaptureFailureStaysPaused(t *testing.T) {
+	run, r, w, cls := newPausedRunner()
+	w.captureErr = errors.New("screen busy")
+
+	run.Toggle()
+	if run.Bot.Mode() != Paused {
+		t.Fatalf("mode = %v, want PAUSED after a failed start capture", run.Bot.Mode())
+	}
+	if cls.sets != 0 {
+		t.Error("map reference was set from a failed capture")
+	}
+	if len(r.alerts) != 1 || !strings.Contains(r.alerts[0], "screen busy") {
+		t.Errorf("alerts = %q, want one naming the error", r.alerts)
+	}
+	if err := run.Tick(at(0)); err != nil {
+		t.Fatal(err)
+	}
+	wantKeys(t, r)
+}
+
+func TestRunnerRestartRetakesMapReference(t *testing.T) {
+	run, _, w, cls := newPausedRunner()
+	run.Toggle() // start: capture 1
+	run.Toggle() // pause
+	run.Toggle() // start: capture 2
+	if w.captures != 2 || cls.sets != 2 {
+		t.Fatalf("captures=%d sets=%d, want 2 and 2", w.captures, cls.sets)
+	}
+	if frameID(cls.mapRef) != 2 {
+		t.Errorf("map reference is frame %d, want the second capture", frameID(cls.mapRef))
+	}
+}
 
 func TestRunnerStopsWhenWindowCloses(t *testing.T) {
 	b, r := newRunning(t)

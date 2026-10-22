@@ -29,27 +29,24 @@ func SaveRef(dir string, s State, img image.Image) (string, error) {
 	return path, SavePNG(path, Normalize(img))
 }
 
-// LoadRefs loads both references from dir.
+// LoadRefs loads the references from dir. The battle reference is required;
+// the map reference is optional (Refs.Map is nil without it), because the bot
+// takes a fresh one each time it starts.
 func LoadRefs(dir string) (Refs, error) {
-	var refs Refs
-	var missing []string
-	for _, s := range []State{Map, Battle} {
-		img, err := LoadPNG(RefPath(dir, s))
-		if errors.Is(err, fs.ErrNotExist) {
-			missing = append(missing, strings.ToLower(s.String()))
-			continue
-		}
-		if err != nil {
-			return Refs{}, err
-		}
-		if s == Map {
-			refs.Map = img
-		} else {
-			refs.Battle = img
-		}
+	battle, err := LoadPNG(RefPath(dir, Battle))
+	if errors.Is(err, fs.ErrNotExist) {
+		return Refs{}, fmt.Errorf("%w in %s: battle", ErrMissingRefs, dir)
 	}
-	if len(missing) > 0 {
-		return Refs{}, fmt.Errorf("%w in %s: %s", ErrMissingRefs, dir, strings.Join(missing, ", "))
+	if err != nil {
+		return Refs{}, err
+	}
+	refs := Refs{Battle: battle}
+	m, err := LoadPNG(RefPath(dir, Map))
+	switch {
+	case err == nil:
+		refs.Map = m
+	case !errors.Is(err, fs.ErrNotExist):
+		return Refs{}, err
 	}
 	return refs, nil
 }

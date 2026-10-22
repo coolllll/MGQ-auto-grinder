@@ -23,20 +23,20 @@ It only reads the screen and presses keys. It doesn't touch the game's files, me
 
 ## Calibrate (once)
 
-The bot recognises the map and battles by comparing them with two screenshots you take. With the game running in a window:
+The bot recognises battles by comparing them with a screenshot of one battle, which you take once. With the game running in a window:
 
-1. Stand on the world map where you want to grind, run `.\grinder.exe calibrate map`, then click into the game.
-2. Start a battle, run `.\grinder.exe calibrate battle`, then click into the game. Any battle screen works, as long as the blue message box is showing along the bottom.
+1. Stand on the world map with no menu open and run `.\grinder.exe calibrate battle`.
+2. Click into the game (within 30 seconds), then walk around until a battle starts. The command saves the battle screen by itself once the encounter has faded in.
 
-Each command waits up to 30 seconds for you to click into the game, then captures it 1 second later.
+You don't calibrate the map: each time you press Space to start the bot, the screen you're on becomes the map reference. So start the bot where you want to grind, and it adapts to any area and to either window size (`WindowedRatio=1` or `2` in `Game.ini`).
 
-Recalibrate if you grind on a different map, or if the bot stops recognising a screen.
+Run `calibrate battle` again only if battles stop being recognised. `calibrate map` still exists for troubleshooting with `debug classify`.
 
 ## Grind
 
 1. Put the character on an open stretch of the world map, with room to walk left and right.
 2. Run `.\grinder.exe run`. It starts **paused**.
-3. Click into the game and press **Space** to start. Press **Space** again to pause. Space only counts while the game window is in front, so typing in other windows won't start or stop the bot.
+3. Click into the game and press **Space** to start; the bot takes the current screen as the map reference. Press **Space** again to pause, and again to start, which retakes the map reference wherever you are. Space only counts while the game window is in front, so typing in other windows won't start or stop the bot.
 
 Keep the game window in front: Windows only delivers the keys to the window you're using. If you switch to another window, the bot stops sending keys until the game is back in front.
 

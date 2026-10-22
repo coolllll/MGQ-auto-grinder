@@ -108,14 +108,24 @@ type Classifier struct {
 	mapHist    histogram
 }
 
-// NewClassifier prepares the references for comparison.
+// NewClassifier prepares the references for comparison. refs.Map may be nil:
+// until SetMapReference is called, nothing is classified MAP.
 func NewClassifier(refs Refs, p Params) *Classifier {
-	m := Normalize(refs.Map)
-	return &Classifier{
+	c := &Classifier{
 		p:          p,
 		windowHist: histogramOf(Normalize(refs.Battle), p.WindowBand),
-		mapHist:    histogramOf(m, m.Bounds()),
 	}
+	if refs.Map != nil {
+		c.SetMapReference(refs.Map)
+	}
+	return c
+}
+
+// SetMapReference replaces the map reference, for example with the screen the
+// user was on when starting the bot.
+func (c *Classifier) SetMapReference(img image.Image) {
+	m := Normalize(img)
+	c.mapHist = histogramOf(m, m.Bounds())
 }
 
 // Score compares a frame with both references.

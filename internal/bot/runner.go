@@ -21,6 +21,7 @@ type Window interface {
 // Classifier turns a captured frame into a state.
 type Classifier interface {
 	Classify(image.Image) detect.State
+	SetMapReference(image.Image)
 }
 
 // Runner feeds the bot one observation per tick.
@@ -28,6 +29,30 @@ type Runner struct {
 	Bot *Bot
 	Win Window
 	Cls Classifier
+	// OnMapReference, if set, receives each map reference taken on start,
+	// for example to save it to disk.
+	OnMapReference func(image.Image)
+}
+
+// Toggle starts or pauses the bot. Starting first captures the current screen
+// as the map reference, since the user starts the bot while standing on the
+// map; if the capture fails, the bot stays paused.
+func (r *Runner) Toggle() {
+	if r.Bot.Mode() == Running {
+		r.Bot.Toggle()
+		return
+	}
+	img, err := r.Win.Capture()
+	if err != nil {
+		r.Bot.n.Alert("Not started: couldn't capture the map reference: " + err.Error())
+		return
+	}
+	r.Cls.SetMapReference(img)
+	if r.OnMapReference != nil {
+		r.OnMapReference(img)
+	}
+	r.Bot.n.Info("Map reference captured.")
+	r.Bot.Toggle()
 }
 
 // Tick checks the window, captures and classifies a frame, and steps the bot.

@@ -21,13 +21,15 @@ import (
 
 const usage = `Usage:
   grinder run                     grind (the default); the toggle key starts and stops
-  grinder calibrate map           save the world map reference
-  grinder calibrate battle        save the battle reference
+  grinder calibrate map           save a world map reference (troubleshooting only;
+                                  run takes a fresh one each time you start it)
+  grinder calibrate battle        save the battle reference (once): stand on the
+                                  world map, click into the game, walk into a battle
   grinder debug window            show the game window the bot would use
   grinder debug capture <file>    save one full-size screenshot of the game
   grinder debug fixture <name>    save a 640x480 test fixture to internal/detect/testdata
   grinder debug record <dir> [s]  save a frame every 0.5 s for s seconds (default 90)
-  grinder debug classify        print live detection scores (Ctrl+C to quit)
+  grinder debug classify          print live detection scores (Ctrl+C to quit)
   grinder debug walk              walk left and right twice, to test input
 
 config.json and refs/ live next to grinder.exe.
@@ -124,7 +126,7 @@ func run() error {
 	}
 	refs, err := detect.LoadRefs(refsDir())
 	if errors.Is(err, detect.ErrMissingRefs) {
-		return fmt.Errorf("%w\nRun \"grinder calibrate map\" on the world map and \"grinder calibrate battle\" in a battle first", err)
+		return fmt.Errorf("%w\nRun \"grinder calibrate battle\" once first", err)
 	}
 	if err != nil {
 		return err
@@ -135,7 +137,17 @@ func run() error {
 	}
 
 	b := bot.New(bot.Config{Walk: cfg.Walk(), ZInterval: cfg.ZInterval(), Grace: cfg.Grace()}, keyboard{}, console{})
-	runner := &bot.Runner{Bot: b, Win: gameWindow{w}, Cls: detect.NewClassifier(refs, cfg.DetectParams())}
+	runner := &bot.Runner{
+		Bot: b,
+		Win: gameWindow{w},
+		Cls: detect.NewClassifier(refs, cfg.DetectParams()),
+		// Keep the latest map reference on disk for "debug classify".
+		OnMapReference: func(img image.Image) {
+			if _, err := detect.SaveRef(refsDir(), detect.Map, img); err != nil {
+				logf("Couldn't save the map reference: %v", err)
+			}
+		},
+	}
 
 	toggles := make(chan struct{}, 1)
 	stop := make(chan struct{})
@@ -148,7 +160,7 @@ func run() error {
 	ticker := time.NewTicker(cfg.Tick())
 	defer ticker.Stop()
 
-	logf("Paused. Put the character on an open stretch of the world map, then press %s in the game to start.", strings.ToUpper(cfg.ToggleKey))
+	logf("Paused. Put the character on an open stretch of the world map, then press %s in the game to start; that screen becomes the map reference.", strings.ToUpper(cfg.ToggleKey))
 	var lastErr string
 	for {
 		select {
@@ -159,7 +171,7 @@ func run() error {
 			logf("Quit.")
 			return nil
 		case <-toggles:
-			b.Toggle()
+			runner.Toggle()
 		case now := <-ticker.C:
 			err := runner.Tick(now)
 			if errors.Is(err, bot.ErrWindowLost) {
@@ -221,9 +233,10 @@ func captureAfterCountdown() (*image.RGBA, error) {
 	return w.Capture()
 }
 
-// captureNextBattle waits for the screen to change away from the calibrated
-// map, lets the encounter transition finish, and captures the battle. Timing a
-// click to land inside a battle proved unreliable.
+// captureNextBattle takes the screen the user is standing on as the map
+// reference, waits for the screen to change away from it through an encounter,
+// lets the transition finish, and captures the battle. Timing a click to land
+// inside a battle proved unreliable.
 func captureNextBattle() (*image.RGBA, error) {
 	const (
 		battleTimeout = 3 * time.Minute
@@ -233,16 +246,22 @@ func captureNextBattle() (*image.RGBA, error) {
 	if err != nil {
 		return nil, err
 	}
-	mapRef, err := detect.LoadPNG(detect.RefPath(refsDir(), detect.Map))
-	if err != nil {
-		return nil, fmt.Errorf("calibrate the map first: %w", err)
-	}
 	w, err := findWindow(cfg)
 	if err != nil {
 		return nil, err
 	}
-	if err := waitForGame(w, "watching for a battle"); err != nil {
+	logf("Stand on the world map with no menu open.")
+	if err := waitForGame(w, "taking the map reference"); err != nil {
 		return nil, err
+	}
+	mapRef, err := w.Capture()
+	if err != nil {
+		return nil, err
+	}
+	if path, err := detect.SaveRef(refsDir(), detect.Map, mapRef); err != nil {
+		logf("Couldn't save the map reference: %v", err)
+	} else {
+		logf("Map reference saved to %s", path)
 	}
 	// Every encounter goes map -> fade to black -> battle. Menus and towns
 	// don't fade to black from the map, so they can't be mistaken for it.
@@ -255,8 +274,8 @@ func captureNextBattle() (*image.RGBA, error) {
 	// counts as "not a battle" once it lasts longer than the swirl.
 	const swirlMax = 2 * time.Second
 	var offMapSince time.Time
-	phase := waitMap
-	logf("Close any menu and stand on the world map...")
+	phase := waitBlack
+	logf("Walk around until a battle starts...")
 	deadline := time.Now().Add(battleTimeout)
 	for phase != waitBattle+1 {
 		if time.Now().After(deadline) {
