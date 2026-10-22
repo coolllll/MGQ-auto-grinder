@@ -2,7 +2,7 @@
 
 ## Why
 
-Grinding EXP in *Monster Girl Quest! Paradox RPG* (RPG Maker VX Ace) means hours of walking back and forth and mashing confirm through random battles. A small bot that watches the game window and plays this loop for the user removes the tedium, while stopping safely the moment anything unexpected appears (game over, dialogue, a crash dialog).
+Grinding EXP in *Monster Girl Quest! Paradox RPG* (RPG Maker VX Ace) means hours of walking back and forth and mashing confirm through random battles. A small bot that watches the game window and plays this loop for the user removes the tedium, while stopping safely the moment anything unexpected appears (game over, a town or menu, a crash dialog).
 
 ## What Changes
 

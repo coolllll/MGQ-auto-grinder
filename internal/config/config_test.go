@@ -31,7 +31,7 @@ func TestLoadMissingFileWritesDefaults(t *testing.T) {
 
 func TestLoadPartialFileKeepsGivenValues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	partial := `{"walkMs": 900, "toggleKey": "f8", "battleRegion": {"y": 300}}`
+	partial := `{"walkMs": 900, "toggleKey": "f8", "windowBand": {"y": 300}}`
 	if err := os.WriteFile(path, []byte(partial), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestLoadPartialFileKeepsGivenValues(t *testing.T) {
 	want := Default()
 	want.WalkMs = 900
 	want.ToggleKey = "f8"
-	want.BattleRegion.Y = 300
+	want.WindowBand.Y = 300
 	if cfg != want {
 		t.Errorf("cfg = %+v\nwant  %+v", cfg, want)
 	}

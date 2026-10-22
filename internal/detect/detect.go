@@ -7,11 +7,12 @@ import (
 	"image/draw"
 )
 
-// NativeW and NativeH are the game's internal resolution. Every frame and
-// reference is normalised to this size, so window scaling doesn't matter.
+// NativeW and NativeH are the game's internal resolution (MGQ Paradox runs
+// VX Ace at 640x480 rather than the stock 544x416). Every frame and reference
+// is normalised to this size, so window scaling doesn't matter.
 const (
-	NativeW = 544
-	NativeH = 416
+	NativeW = 640
+	NativeH = 480
 )
 
 // State is what the game is showing.
@@ -59,23 +60,27 @@ func Normalize(img image.Image) *image.RGBA {
 }
 
 // Params are the classifier's tunables, all in native-resolution terms.
+// Similarities are colour-histogram overlaps from 0 (nothing in common) to 1
+// (identical colour mix).
 type Params struct {
-	// BattleRegion is compared pixel by pixel with the battle reference.
-	BattleRegion image.Rectangle
-	// BattleMaxDiff is the largest mean per-channel difference (0-255) that
-	// still counts as a battle.
-	BattleMaxDiff float64
-	// MapMinSimilarity is the smallest colour-histogram overlap (0-1) with
-	// the map reference that still counts as the map.
+	// WindowBand is the strip at the bottom of the screen where every battle
+	// screen shows its blue message or command windows.
+	WindowBand image.Rectangle
+	// WindowMinSimilarity is how closely the band must match the battle
+	// reference's band for the frame to count as a battle.
+	WindowMinSimilarity float64
+	// MapMinSimilarity is how closely a frame must match the map reference
+	// to count as the map. It also decides whether the area above a window
+	// band is the map, which makes the frame a dialogue on the map.
 	MapMinSimilarity float64
 }
 
 // DefaultParams are the starting values for the config file.
 func DefaultParams() Params {
 	return Params{
-		BattleRegion:     image.Rect(0, 288, NativeW, NativeH),
-		BattleMaxDiff:    20,
-		MapMinSimilarity: 0.80,
+		WindowBand:          image.Rect(0, 368, NativeW, NativeH),
+		WindowMinSimilarity: 0.55,
+		MapMinSimilarity:    0.55,
 	}
 }
 
@@ -87,46 +92,59 @@ type Refs struct {
 
 // Scores are the raw comparison results for one frame.
 type Scores struct {
-	BattleDiff    float64
-	MapSimilarity float64
+	// Window is the bottom band's similarity to the battle reference's band.
+	Window float64
+	// Map is the whole frame's similarity to the map reference.
+	Map float64
+	// AboveWindow is the similarity of the area above the band to the map
+	// reference.
+	AboveWindow float64
 }
 
 // Classifier compares frames with the calibration references.
 type Classifier struct {
-	p       Params
-	battle  *image.RGBA
-	mapHist histogram
+	p          Params
+	windowHist histogram
+	mapHist    histogram
 }
 
 // NewClassifier prepares the references for comparison.
 func NewClassifier(refs Refs, p Params) *Classifier {
+	m := Normalize(refs.Map)
 	return &Classifier{
-		p:       p,
-		battle:  Normalize(refs.Battle),
-		mapHist: histogramOf(Normalize(refs.Map)),
+		p:          p,
+		windowHist: histogramOf(Normalize(refs.Battle), p.WindowBand),
+		mapHist:    histogramOf(m, m.Bounds()),
 	}
 }
 
 // Score compares a frame with both references.
 func (c *Classifier) Score(frame image.Image) Scores {
 	f := Normalize(frame)
+	above := image.Rect(0, 0, NativeW, c.p.WindowBand.Min.Y)
 	return Scores{
-		BattleDiff:    regionDiff(f, c.battle, c.p.BattleRegion),
-		MapSimilarity: histogramOf(f).intersect(c.mapHist),
+		Window:      histogramOf(f, c.p.WindowBand).intersect(c.windowHist),
+		Map:         histogramOf(f, f.Bounds()).intersect(c.mapHist),
+		AboveWindow: histogramOf(f, above).intersect(c.mapHist),
 	}
 }
 
-// StateFor turns scores into a state. Battle wins over map, because the
-// battle region check is the more specific of the two.
+// StateFor turns scores into a state.
+//
+// Battle screens always have the battle windows along the bottom, whatever is
+// happening above them. The map's own text box looks the same, so a window
+// band with the map above it is a dialogue on the map, which is NEITHER.
 func (c *Classifier) StateFor(s Scores) State {
-	switch {
-	case s.BattleDiff <= c.p.BattleMaxDiff:
+	if s.Window >= c.p.WindowMinSimilarity {
+		if s.AboveWindow >= c.p.MapMinSimilarity {
+			return Neither
+		}
 		return Battle
-	case s.MapSimilarity >= c.p.MapMinSimilarity:
-		return Map
-	default:
-		return Neither
 	}
+	if s.Map >= c.p.MapMinSimilarity {
+		return Map
+	}
+	return Neither
 }
 
 // Classify scores a frame and returns its state.
@@ -134,51 +152,41 @@ func (c *Classifier) Classify(frame image.Image) State {
 	return c.StateFor(c.Score(frame))
 }
 
-// sampleStep skips pixels in the region comparison; the UI is large and flat
-// enough that every 4th pixel is plenty.
-const sampleStep = 4
-
-// regionDiff is the mean absolute per-channel difference of a and b inside r.
-func regionDiff(a, b *image.RGBA, r image.Rectangle) float64 {
-	r = r.Intersect(a.Bounds()).Intersect(b.Bounds())
-	var sum, n int
-	for y := r.Min.Y; y < r.Max.Y; y += sampleStep {
-		for x := r.Min.X; x < r.Max.X; x += sampleStep {
-			i, j := a.PixOffset(x, y), b.PixOffset(x, y)
-			for c := 0; c < 3; c++ {
-				d := int(a.Pix[i+c]) - int(b.Pix[j+c])
-				if d < 0 {
-					d = -d
-				}
-				sum += d
-			}
-			n += 3
-		}
-	}
-	if n == 0 {
-		return 255
-	}
-	return float64(sum) / float64(n)
+// Similarity is the colour-histogram overlap of two whole frames, 0-1.
+func Similarity(a, b image.Image) float64 {
+	na, nb := Normalize(a), Normalize(b)
+	return histogramOf(na, na.Bounds()).intersect(histogramOf(nb, nb.Bounds()))
 }
 
-// histogram is a normalised 4x4x4-bin RGB colour histogram. It hardly changes
-// when the map scrolls a few tiles, unlike a pixel comparison.
+// DarkFraction is the share of a frame's pixels in the darkest colour bin,
+// which is close to 1 during fades to black.
+func DarkFraction(img image.Image) float64 {
+	n := Normalize(img)
+	return histogramOf(n, n.Bounds())[0]
+}
+
+// histogram is a normalised 4x4x4-bin RGB colour histogram. It barely changes
+// when the map scrolls or the text in a window changes, unlike a pixel-by-pixel
+// comparison.
 type histogram [64]float64
 
-func histogramOf(img *image.RGBA) histogram {
+// histogramOf builds the histogram of r, sampling every other pixel.
+func histogramOf(img *image.RGBA, r image.Rectangle) histogram {
 	var h histogram
 	var n float64
-	b := img.Bounds()
-	for y := b.Min.Y; y < b.Max.Y; y += 2 {
-		for x := b.Min.X; x < b.Max.X; x += 2 {
+	r = r.Intersect(img.Bounds())
+	for y := r.Min.Y; y < r.Max.Y; y += 2 {
+		for x := r.Min.X; x < r.Max.X; x += 2 {
 			i := img.PixOffset(x, y)
 			bin := int(img.Pix[i]>>6)<<4 | int(img.Pix[i+1]>>6)<<2 | int(img.Pix[i+2]>>6)
 			h[bin]++
 			n++
 		}
 	}
-	for i := range h {
-		h[i] /= n
+	if n > 0 {
+		for i := range h {
+			h[i] /= n
+		}
 	}
 	return h
 }

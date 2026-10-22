@@ -23,31 +23,31 @@ type Rect struct {
 
 // Config is everything a user can tune. Durations are in milliseconds.
 type Config struct {
-	WindowTitle      string  `json:"windowTitle"`
-	ToggleKey        string  `json:"toggleKey"`
-	TickMs           int     `json:"tickMs"`
-	WalkMs           int     `json:"walkMs"`
-	ZIntervalMs      int     `json:"zIntervalMs"`
-	GraceMs          int     `json:"graceMs"`
-	BattleRegion     Rect    `json:"battleRegion"`
-	BattleMaxDiff    float64 `json:"battleMaxDiff"`
-	MapMinSimilarity float64 `json:"mapMinSimilarity"`
+	WindowTitle         string  `json:"windowTitle"`
+	ToggleKey           string  `json:"toggleKey"`
+	TickMs              int     `json:"tickMs"`
+	WalkMs              int     `json:"walkMs"`
+	ZIntervalMs         int     `json:"zIntervalMs"`
+	GraceMs             int     `json:"graceMs"`
+	WindowBand          Rect    `json:"windowBand"`
+	WindowMinSimilarity float64 `json:"windowMinSimilarity"`
+	MapMinSimilarity    float64 `json:"mapMinSimilarity"`
 }
 
 // Default returns the built-in settings.
 func Default() Config {
 	p := detect.DefaultParams()
-	r := p.BattleRegion
+	r := p.WindowBand
 	return Config{
-		WindowTitle:      "Monster Girl Quest",
-		ToggleKey:        "space",
-		TickMs:           50,
-		WalkMs:           600,
-		ZIntervalMs:      100,
-		GraceMs:          3000,
-		BattleRegion:     Rect{X: r.Min.X, Y: r.Min.Y, W: r.Dx(), H: r.Dy()},
-		BattleMaxDiff:    p.BattleMaxDiff,
-		MapMinSimilarity: p.MapMinSimilarity,
+		WindowTitle:         "Monster Girl Quest",
+		ToggleKey:           "space",
+		TickMs:              50,
+		WalkMs:              600,
+		ZIntervalMs:         100,
+		GraceMs:             3000,
+		WindowBand:          Rect{X: r.Min.X, Y: r.Min.Y, W: r.Dx(), H: r.Dy()},
+		WindowMinSimilarity: p.WindowMinSimilarity,
+		MapMinSimilarity:    p.MapMinSimilarity,
 	}
 }
 
@@ -81,7 +81,7 @@ func Save(path string, cfg Config) error {
 func (c Config) Validate() error {
 	positive := map[string]int{
 		"tickMs": c.TickMs, "walkMs": c.WalkMs, "zIntervalMs": c.ZIntervalMs, "graceMs": c.GraceMs,
-		"battleRegion.w": c.BattleRegion.W, "battleRegion.h": c.BattleRegion.H,
+		"windowBand.w": c.WindowBand.W, "windowBand.h": c.WindowBand.H,
 	}
 	for name, v := range positive {
 		if v <= 0 {
@@ -93,11 +93,11 @@ func (c Config) Validate() error {
 
 // DetectParams converts the detection settings for the classifier.
 func (c Config) DetectParams() detect.Params {
-	r := c.BattleRegion
+	r := c.WindowBand
 	return detect.Params{
-		BattleRegion:     image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H),
-		BattleMaxDiff:    c.BattleMaxDiff,
-		MapMinSimilarity: c.MapMinSimilarity,
+		WindowBand:          image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H),
+		WindowMinSimilarity: c.WindowMinSimilarity,
+		MapMinSimilarity:    c.MapMinSimilarity,
 	}
 }
 

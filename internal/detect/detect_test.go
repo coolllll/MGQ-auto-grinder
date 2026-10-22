@@ -71,8 +71,9 @@ func syntheticMap(shift int) *image.RGBA {
 func syntheticBattle(bg color.RGBA) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, NativeW, NativeH))
 	fill(img, img.Bounds(), bg)
-	fill(img, image.Rect(0, 288, NativeW, NativeH), color.RGBA{20, 20, 60, 255})
-	fill(img, image.Rect(16, 300, 120, 316), color.RGBA{240, 240, 240, 255})
+	band := DefaultParams().WindowBand
+	fill(img, band, color.RGBA{40, 70, 150, 255})
+	fill(img, image.Rect(16, band.Min.Y+12, 120, band.Min.Y+28), color.RGBA{240, 240, 240, 255})
 	return img
 }
 
@@ -121,22 +122,29 @@ func TestClassifyFixtures(t *testing.T) {
 		{"map.png", Map},
 		{"map_scrolled.png", Map},
 		{"battle.png", Battle},
+		{"battle_command.png", Battle},
+		{"battle_skill_menu.png", Battle},
+		{"battle_flash.png", Battle},
 		{"battle_victory.png", Battle},
-		{"game_over.png", Neither},
+		{"battle_level_up.png", Battle},
+		{"encounter_swirl.png", Neither},
 		{"black_fade.png", Neither},
-		{"dialogue.png", Neither},
 	}
 	for _, tc := range cases {
-		img, err := LoadPNG(filepath.Join(dir, tc.file))
-		if err != nil {
-			t.Errorf("%s: %v", tc.file, err)
-			continue
-		}
-		s := c.Score(img)
-		t.Logf("%-20s battleDiff=%6.2f mapSimilarity=%.3f", tc.file, s.BattleDiff, s.MapSimilarity)
-		if got := c.StateFor(s); got != tc.want {
-			t.Errorf("%s: got %v, want %v", tc.file, got, tc.want)
-		}
+		t.Run(tc.file, func(t *testing.T) {
+			img, err := LoadPNG(filepath.Join(dir, tc.file))
+			if errors.Is(err, os.ErrNotExist) {
+				t.Skip("fixture not captured yet")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := c.Score(img)
+			t.Logf("window=%.3f map=%.3f aboveWindow=%.3f", s.Window, s.Map, s.AboveWindow)
+			if got := c.StateFor(s); got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

@@ -48,7 +48,7 @@ The bot SHALL classify every captured frame as exactly one of MAP, BATTLE, or NE
 - **THEN** it is classified BATTLE
 
 #### Scenario: Unrecognized frame
-- **WHEN** the captured frame matches neither reference, such as the game-over screen, a dialogue scene, or a black transition frame
+- **WHEN** the captured frame matches neither reference, such as the game-over screen, a town, or a black transition frame
 - **THEN** it is classified NEITHER
 
 ### Requirement: Battle detection covers victory messages

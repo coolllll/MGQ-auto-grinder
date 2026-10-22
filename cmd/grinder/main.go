@@ -24,16 +24,21 @@ const usage = `Usage:
   grinder calibrate map           save the world map reference
   grinder calibrate battle        save the battle reference
   grinder debug window            show the game window the bot would use
-  grinder debug capture <file>    save one normalised screenshot of the game
-  grinder debug classify          print live detection scores (Ctrl+C to quit)
+  grinder debug capture <file>    save one full-size screenshot of the game
+  grinder debug fixture <name>    save a 640x480 test fixture to internal/detect/testdata
+  grinder debug record <dir> [s]  save a frame every 0.5 s for s seconds (default 90)
+  grinder debug classify        print live detection scores (Ctrl+C to quit)
   grinder debug walk              walk left and right twice, to test input
 
 config.json and refs/ live next to grinder.exe.
 `
 
-// countdown is how long capture commands wait so the user can click into the
-// game first.
-const countdown = 3 * time.Second
+// Commands that capture or press keys wait up to focusTimeout for the user to
+// click into the game, then settle before acting.
+const (
+	focusTimeout = 30 * time.Second
+	settle       = time.Second
+)
 
 func main() {
 	win.SetDPIAware()
@@ -183,7 +188,13 @@ func calibrate(what string) error {
 	default:
 		return fmt.Errorf("calibrate takes \"map\" or \"battle\", not %q", what)
 	}
-	img, err := captureAfterCountdown()
+	var img *image.RGBA
+	var err error
+	if state == detect.Battle {
+		img, err = captureNextBattle()
+	} else {
+		img, err = captureAfterCountdown()
+	}
 	if err != nil {
 		return err
 	}
@@ -204,12 +215,112 @@ func captureAfterCountdown() (*image.RGBA, error) {
 	if err != nil {
 		return nil, err
 	}
-	logf("Click into the game now; capturing in %v...", countdown)
-	time.Sleep(countdown)
-	if !w.IsForeground() {
-		return nil, errors.New("the game window was not in front, so the capture could show something else; try again")
+	if err := waitForGame(w, "capturing"); err != nil {
+		return nil, err
 	}
 	return w.Capture()
+}
+
+// captureNextBattle waits for the screen to change away from the calibrated
+// map, lets the encounter transition finish, and captures the battle. Timing a
+// click to land inside a battle proved unreliable.
+func captureNextBattle() (*image.RGBA, error) {
+	const (
+		battleTimeout = 3 * time.Minute
+		transition    = 3 * time.Second
+	)
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, err
+	}
+	mapRef, err := detect.LoadPNG(detect.RefPath(refsDir(), detect.Map))
+	if err != nil {
+		return nil, fmt.Errorf("calibrate the map first: %w", err)
+	}
+	w, err := findWindow(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := waitForGame(w, "watching for a battle"); err != nil {
+		return nil, err
+	}
+	// Every encounter goes map -> fade to black -> battle. Menus and towns
+	// don't fade to black from the map, so they can't be mistaken for it.
+	const (
+		waitMap = iota
+		waitBlack
+		waitBattle
+	)
+	// The encounter swirl is neither map nor black, so leaving the map only
+	// counts as "not a battle" once it lasts longer than the swirl.
+	const swirlMax = 2 * time.Second
+	var offMapSince time.Time
+	phase := waitMap
+	logf("Close any menu and stand on the world map...")
+	deadline := time.Now().Add(battleTimeout)
+	for phase != waitBattle+1 {
+		if time.Now().After(deadline) {
+			return nil, errors.New("no battle started in time; try again")
+		}
+		time.Sleep(100 * time.Millisecond)
+		if !w.IsForeground() {
+			continue
+		}
+		img, err := w.Capture()
+		if err != nil {
+			return nil, err
+		}
+		onMap := detect.Similarity(img, mapRef) >= cfg.MapMinSimilarity
+		dark := detect.DarkFraction(img) > 0.5
+		if onMap || dark {
+			offMapSince = time.Time{}
+		} else if offMapSince.IsZero() {
+			offMapSince = time.Now()
+		}
+		switch {
+		case phase == waitMap && onMap:
+			logf("On the map. Walk around until a battle starts...")
+			phase = waitBlack
+		case phase == waitBlack && dark:
+			phase = waitBattle
+		case phase == waitBlack && !offMapSince.IsZero() && time.Since(offMapSince) > swirlMax:
+			logf("Left the map without a battle (menu or town?). Go back to the world map...")
+			phase = waitMap
+		case phase == waitBattle && !dark:
+			phase = waitBattle + 1
+		}
+	}
+	logf("Encounter! Waiting %v for the battle screen to settle...", transition)
+	time.Sleep(transition)
+	if !w.IsForeground() {
+		return nil, errors.New("the game window left the front during the battle; try again")
+	}
+	img, err := w.Capture()
+	if err != nil {
+		return nil, err
+	}
+	if detect.Similarity(img, mapRef) >= cfg.MapMinSimilarity || detect.DarkFraction(img) > 0.5 {
+		return nil, errors.New("the screen doesn't look like a battle (still the map, or a black transition); try again")
+	}
+	return img, nil
+}
+
+// waitForGame waits for the user to click into the game, then gives the
+// window a moment to redraw before the caller captures or sends keys.
+func waitForGame(w win.Window, action string) error {
+	logf("Click into the game window; %s %v after it comes to the front...", action, settle)
+	deadline := time.Now().Add(focusTimeout)
+	for !w.IsForeground() {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the game window didn't come to the front within %v", focusTimeout)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	time.Sleep(settle)
+	if !w.IsForeground() {
+		return errors.New("the game window left the front before " + action + "; try again")
+	}
+	return nil
 }
 
 func debug(what string, args []string) error {
@@ -224,11 +335,39 @@ func debug(what string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := detect.SavePNG(args[0], detect.Normalize(img)); err != nil {
+		if err := detect.SavePNG(args[0], img); err != nil {
 			return err
 		}
 		logf("Saved %s", args[0])
 		return nil
+	case "fixture":
+		if len(args) != 1 {
+			return errors.New("debug fixture takes one fixture name, such as map_scrolled")
+		}
+		img, err := captureAfterCountdown()
+		if err != nil {
+			return err
+		}
+		path := filepath.Join("internal", "detect", "testdata", args[0]+".png")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := detect.SavePNG(path, detect.Normalize(img)); err != nil {
+			return err
+		}
+		logf("Saved %s", path)
+		return nil
+	case "record":
+		if len(args) < 1 || len(args) > 2 {
+			return errors.New("debug record takes an output folder and optionally a number of seconds")
+		}
+		seconds := 90
+		if len(args) == 2 {
+			if _, err := fmt.Sscan(args[1], &seconds); err != nil || seconds <= 0 {
+				return fmt.Errorf("invalid number of seconds %q", args[1])
+			}
+		}
+		return debugRecord(args[0], time.Duration(seconds)*time.Second)
 	case "classify":
 		return debugClassify()
 	case "walk":
@@ -251,6 +390,53 @@ func debugWindow() error {
 		}
 		return err
 	}
+	return nil
+}
+
+// debugRecord saves a normalised frame every half second while the game is in
+// front, so a whole encounter can be studied afterwards.
+func debugRecord(dir string, length time.Duration) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	w, err := findWindow(cfg)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := waitForGame(w, "recording"); err != nil {
+		return err
+	}
+	logf("Recording for %v. Play normally; frames are skipped while the game isn't in front.", length)
+	start := time.Now()
+	t := time.NewTicker(500 * time.Millisecond)
+	defer t.Stop()
+	saved := 0
+	for now := range t.C {
+		if now.Sub(start) >= length {
+			break
+		}
+		if !w.Exists() {
+			return errors.New("the game window was closed")
+		}
+		if !w.IsForeground() {
+			continue
+		}
+		img, err := w.Capture()
+		if err != nil {
+			logf("capture failed: %v", err)
+			continue
+		}
+		name := filepath.Join(dir, fmt.Sprintf("frame_%04d_%06dms.png", saved, now.Sub(start).Milliseconds()))
+		if err := detect.SavePNG(name, detect.Normalize(img)); err != nil {
+			return err
+		}
+		saved++
+	}
+	logf("Saved %d frames to %s", saved, dir)
 	return nil
 }
 
@@ -283,8 +469,8 @@ func debugClassify() error {
 				continue
 			}
 			s := cls.Score(img)
-			logf("%-7v battleDiff=%6.2f (max %.2f)  mapSimilarity=%.3f (min %.3f)",
-				cls.StateFor(s), s.BattleDiff, cfg.BattleMaxDiff, s.MapSimilarity, cfg.MapMinSimilarity)
+			logf("%-7v window=%.3f (min %.2f)  map=%.3f  aboveWindow=%.3f (min %.2f)",
+				cls.StateFor(s), s.Window, cfg.WindowMinSimilarity, s.Map, s.AboveWindow, cfg.MapMinSimilarity)
 		}
 	}
 }
@@ -298,8 +484,9 @@ func debugWalk() error {
 	if err != nil {
 		return err
 	}
-	logf("Click into the game now; walking in %v...", countdown)
-	time.Sleep(countdown)
+	if err := waitForGame(w, "walking"); err != nil {
+		return err
+	}
 	kb := keyboard{}
 	for i := 0; i < 2; i++ {
 		for _, k := range []bot.Key{bot.KeyLeft, bot.KeyRight} {

@@ -54,8 +54,8 @@ When the state has been NEITHER continuously for longer than a configured grace 
 - **WHEN** the screen shows the encounter flash or a fade lasting less than the grace period, then becomes BATTLE
 - **THEN** the bot keeps running without pausing
 
-#### Scenario: Dialogue or event appears
-- **WHEN** a dialogue, menu, or event scene stays on screen past the grace period
+#### Scenario: Another screen appears
+- **WHEN** a screen that is neither the world map nor a battle, such as a town or a menu, stays on screen past the grace period
 - **THEN** the bot pauses and alerts the user
 
 #### Scenario: Game-over screen is not pressed through

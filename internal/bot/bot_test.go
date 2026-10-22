@@ -177,7 +177,7 @@ func TestShortTransitionDoesNotStop(t *testing.T) {
 	wantKeys(t, r, "down Left", "up Left", "down Z")
 }
 
-func TestLongDialogueStops(t *testing.T) {
+func TestLongOtherScreenStops(t *testing.T) {
 	b, r := newRunning(t)
 	b.Step(at(0), seen(detect.Map))
 	b.Step(at(500), seen(detect.Neither))
