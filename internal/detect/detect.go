@@ -70,8 +70,7 @@ type Params struct {
 	// reference's band for the frame to count as a battle.
 	WindowMinSimilarity float64
 	// MapMinSimilarity is how closely a frame must match the map reference
-	// to count as the map. It also decides whether the area above a window
-	// band is the map, which makes the frame a dialogue on the map.
+	// to count as the map.
 	MapMinSimilarity float64
 }
 
@@ -96,9 +95,6 @@ type Scores struct {
 	Window float64
 	// Map is the whole frame's similarity to the map reference.
 	Map float64
-	// AboveWindow is the similarity of the area above the band to the map
-	// reference.
-	AboveWindow float64
 }
 
 // Classifier compares frames with the calibration references.
@@ -131,24 +127,20 @@ func (c *Classifier) SetMapReference(img image.Image) {
 // Score compares a frame with both references.
 func (c *Classifier) Score(frame image.Image) Scores {
 	f := Normalize(frame)
-	above := image.Rect(0, 0, NativeW, c.p.WindowBand.Min.Y)
 	return Scores{
-		Window:      histogramOf(f, c.p.WindowBand).intersect(c.windowHist),
-		Map:         histogramOf(f, f.Bounds()).intersect(c.mapHist),
-		AboveWindow: histogramOf(f, above).intersect(c.mapHist),
+		Window: histogramOf(f, c.p.WindowBand).intersect(c.windowHist),
+		Map:    histogramOf(f, f.Bounds()).intersect(c.mapHist),
 	}
 }
 
 // StateFor turns scores into a state.
 //
 // Battle screens always have the battle windows along the bottom, whatever is
-// happening above them. The map's own text box looks the same, so a window
-// band with the map above it is a dialogue on the map, which is NEITHER.
+// happening above them, so a matching window band means BATTLE even when the
+// battle backdrop looks like the map. Checking it first also keeps such
+// battles out of MAP.
 func (c *Classifier) StateFor(s Scores) State {
 	if s.Window >= c.p.WindowMinSimilarity {
-		if s.AboveWindow >= c.p.MapMinSimilarity {
-			return Neither
-		}
 		return Battle
 	}
 	if s.Map >= c.p.MapMinSimilarity {

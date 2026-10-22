@@ -140,7 +140,7 @@ func TestClassifyFixtures(t *testing.T) {
 				t.Fatal(err)
 			}
 			s := c.Score(img)
-			t.Logf("window=%.3f map=%.3f aboveWindow=%.3f", s.Window, s.Map, s.AboveWindow)
+			t.Logf("window=%.3f map=%.3f", s.Window, s.Map)
 			if got := c.StateFor(s); got != tc.want {
 				t.Errorf("got %v, want %v", got, tc.want)
 			}
@@ -195,6 +195,34 @@ func TestSameSpotReferenceMargin(t *testing.T) {
 	t.Logf("map_scrolled vs same-spot reference: map=%.3f (threshold %.2f)", s.Map, DefaultParams().MapMinSimilarity)
 	if s.Map < 0.75 {
 		t.Errorf("map similarity %.3f, want >= 0.75", s.Map)
+	}
+}
+
+// TestBattleBackdropLikeTheMap is the regression test for the second grinding
+// spot, where the battle backdrop shares its colours with the world map. There
+// the area above the window band scored up to 0.58 against the map reference,
+// and a rule that called "battle windows with the map above them" a dialogue
+// on the map turned battle frames into NEITHER. The recorded frame peaks at
+// 0.53, so the map threshold is lowered to 0.50 to stand in for a slightly
+// more map-like spot; a battle frame must be BATTLE whatever the threshold.
+func TestBattleBackdropLikeTheMap(t *testing.T) {
+	p := DefaultParams()
+	p.MapMinSimilarity = 0.50
+	c := NewClassifier(Refs{Battle: loadFixture(t, "battle.png"), Map: loadFixture(t, "map_spot2.png")}, p)
+
+	for _, tc := range []struct {
+		file string
+		want State
+	}{
+		{"battle_spot2.png", Battle},
+		{"map_spot2.png", Map},
+	} {
+		img := loadFixture(t, tc.file)
+		s := c.Score(img)
+		t.Logf("%s: window=%.3f map=%.3f", tc.file, s.Window, s.Map)
+		if got := c.StateFor(s); got != tc.want {
+			t.Errorf("%s = %v, want %v", tc.file, got, tc.want)
+		}
 	}
 }
 
