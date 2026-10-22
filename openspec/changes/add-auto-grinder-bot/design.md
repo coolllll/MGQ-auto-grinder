@@ -7,7 +7,6 @@
 - A recorded encounter (map, transition, fight, victory, back to map) showed what every battle screen has in common: blue message/command windows along the bottom ~112 px. The party status row above them disappears during command input and after victory, and the battle background changes with every attack animation.
 - RGSS reads the real keyboard state each frame. Keys posted to a background window are ignored, so the game must be in front for input to work. Space, Enter and Z are all "confirm" in VX Ace; F1 opens the RGSS settings dialog, F2 shows FPS, and F12 resets the game.
 - `errors.txt` shows the game sometimes crashes on missing images mid-battle; a crash dialog must be treated like any other unknown screen.
-- Go is not installed on the dev machine yet.
 
 ## Goals / Non-Goals
 
@@ -30,12 +29,13 @@ All needed Win32 calls (`EnumWindows`, `GetClientRect`, `ClientToScreen`, `GetFo
 
 ### Package layout
 ```
-cmd/grinder/        main: CLI (run / calibrate), wiring, console output
+cmd/grinder/        main: CLI (run / calibrate / debug), wiring, console output
 internal/win/       window lookup, focus check, capture, SendInput, key polling
 internal/detect/    references, frame normalisation, MAP/BATTLE/NEITHER classifier
-internal/bot/       state machine, driven by a clock + Frame source + Input sink
+internal/config/    config.json defaults, loading and validation
+internal/bot/       state machine and the per-tick runner
 ```
-`internal/bot` depends only on small interfaces (`Classifier`, `Keyboard`, `Clock`), so it can be unit-tested with fakes.
+`internal/bot` depends only on small interfaces (`Window`, `Classifier`, `Keyboard`, `Notifier`) and takes the current time as an argument, so it can be unit-tested with fakes and made-up timestamps.
 
 ### Capture the window's client area from the screen DC
 Find the window with `EnumWindows`, matching class `RGSS Player` and a title containing `Monster Girl Quest` (configurable). Capture with `BitBlt` from the screen DC at the client rectangle. `PrintWindow`/window-DC capture can return black for Direct3D-backed windows. Screen capture is reliable because the game is required to be in front anyway.
@@ -54,7 +54,11 @@ Rules: band matches and the area above is the map -> NEITHER (dialogue on the ma
 Rejected: comparing the party-status row pixel by pixel (the first design), because the row disappears during command input and after victory; template matching, as slower and more fragile to tune.
 
 ### Calibration from the CLI
-`grinder calibrate map` / `grinder calibrate battle` waits up to 30 seconds for the user to click into the game, captures one frame 1 second after it comes to the front, and saves it as PNG under `refs/` next to the exe. No in-game hotkeys are used, which avoids F1/F2/F5/F6/F12 conflicts. The same wait is used by the debug commands that capture or press keys (`capture`, `fixture`, `record`, `walk`).
+`grinder calibrate map` waits up to 30 seconds for the user to click into the game, captures one frame 1 second after it comes to the front, and saves it as PNG under `refs/` next to the exe. The same wait is used by the debug commands that capture or press keys (`capture`, `fixture`, `record`, `walk`).
+
+`grinder calibrate battle` needs the map reference and waits for a real encounter instead: the screen must be the world map, then fade to black (every encounter does; menus and towns don't), then come back from black; it captures 3 seconds later and refuses a result that is still the map or mostly black. Up to 2 seconds of non-map frames are allowed before the black, for the encounter swirl. Timing a click to land in a battle proved unreliable in testing (two captures of the map, one of the Options menu).
+
+No in-game hotkeys are used, which avoids F1/F2/F5/F6/F12 conflicts.
 
 ### State machine
 ```
@@ -68,10 +72,10 @@ Rejected: comparing the party-status row pixel by pixel (the first design), beca
          |                               |
          +---- NEITHER > grace period ---+  (release keys, beep, log)
 ```
-- Tick at ~10 Hz: capture, classify, act.
+- Tick at the configured rate (default 50 ms, 20 Hz): capture, classify, act. Z is held for half the Z interval, so a 100 ms interval needs ticks of 50 ms or less.
 - Every state change releases all held keys first.
 - Focus check happens before every input; when the game is not in front the bot sends nothing, but RUNNING/PAUSED is kept.
-- Space is detected with `GetAsyncKeyState` edge detection (press transitions only), so holding it toggles once.
+- Space is detected with `GetAsyncKeyState` edge detection (press transitions only), so holding it toggles once. A press only counts while the game window is in front: the key is watched system-wide, and in testing, typing in another app toggled the bot with every space.
 
 ### Input via `SendInput` with scan codes
 Use hardware scan codes (`KEYEVENTF_SCANCODE`, plus `KEYEVENTF_EXTENDEDKEY` for the arrow keys) rather than virtual-key events. Games that poll keyboard state accept these more reliably.
@@ -86,15 +90,11 @@ Use hardware scan codes (`KEYEVENTF_SCANCODE`, plus `KEYEVENTF_EXTENDEDKEY` for 
 
 ## Risks / Trade-offs
 
-- [Space is also the game's confirm key, so each toggle sends one confirm to the game] -> Accepted by the user; documented in the README. The key is a config value if it ever needs to change.
+- [Space is also the game's confirm key, so each toggle sends one confirm to the game] -> Accepted by the user; documented in the README. The key is a config value if it ever needs to change. Spaces typed in other windows are ignored.
 - [A dialogue box on the map is the same window style as a battle's, so it could be taken for a battle and pressed through with Z] -> Dialogue on the world map is out of scope. The area-above-the-band rule is kept as a cheap safety net that turns it into NEITHER, but it is not covered by a fixture. Dialogue inside towns is not caught by it (the area above is not the world map) and is also out of scope.
 - [A battle background that looks like the map (e.g. a grassland photo) could make a battle look like a map dialogue] -> On the recorded grassland battle the area above scored <= 0.23 against the map, far below 0.55. Revisit if another area's battles stop the bot.
 - [A boss or strong enemy beats the party] -> Game over is NEITHER, so the bot sends no input and pauses after the grace period; the save is not touched.
-- [The game crashes and shows an error dialog] -> The crash dialog becomes the foreground window, so focus safety stops input immediately and the grace period then pauses the bot.
+- [The game crashes and shows an error dialog] -> The crash dialog becomes the foreground window, so focus safety stops input immediately. The bot then waits, still RUNNING and without a beep, because frames aren't classified while the game isn't in front; the grace period never starts. Known gap: no alert when a crash dialog takes focus.
 - [Antivirus may flag a program that sends synthetic keystrokes] -> Build locally from source; no packing or obfuscation.
 - [A wall blocks walking in both directions] -> Out of scope; the user picks an open grinding spot.
-
-## Open Questions
-
-- Exact default battle region and thresholds: to be measured from the fixture screenshots during implementation. This doesn't change the approach or the tasks.
-- Default walk duration per direction: 600 ms is a guess, to be tuned in play. Also a config value.
+- [A town lies in the walking path] -> Entering it is NEITHER, so the bot stops after the grace period; the user starts a few tiles away from towns.

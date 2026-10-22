@@ -22,15 +22,19 @@ The bot SHALL find the running game window by its title and capture only that wi
 - **THEN** the bot stops and reports that the window was lost
 
 ### Requirement: Calibrate reference images
-The bot SHALL provide a calibration mode in which the user captures one reference of the world map and one reference of a battle from the live game window. References MUST be saved to disk and reused on later runs without recalibrating.
+The bot SHALL provide calibration commands with which the user captures one reference of the world map and one reference of a battle from the live game window. References MUST be saved to disk and reused on later runs without recalibrating.
 
 #### Scenario: Capture a map reference
-- **WHEN** the user is on the world map in calibration mode and presses the map-capture key
-- **THEN** the bot saves a map reference image and confirms it was saved
+- **WHEN** the user stands on the world map, runs the map calibration command, and clicks into the game
+- **THEN** the bot saves a map reference image shortly after the game comes to the front and confirms it was saved
 
 #### Scenario: Capture a battle reference
-- **WHEN** the user is in a battle in calibration mode and presses the battle-capture key
-- **THEN** the bot saves a battle reference image and confirms it was saved
+- **WHEN** the user runs the battle calibration command and an encounter starts from the world map (map, then fade to black, then battle)
+- **THEN** the bot saves a battle reference image once the battle screen has appeared and confirms it was saved
+
+#### Scenario: Menu or town during battle calibration
+- **WHEN** the screen leaves the world map without fading to black, such as when a menu opens or the party enters a town
+- **THEN** the bot saves nothing and keeps waiting for an encounter
 
 #### Scenario: Missing references
 - **WHEN** the user starts grinding without both references saved

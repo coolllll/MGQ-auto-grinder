@@ -140,7 +140,7 @@ func run() error {
 	toggles := make(chan struct{}, 1)
 	stop := make(chan struct{})
 	defer close(stop)
-	go win.WatchKey(vk, 10*time.Millisecond, toggles, stop)
+	go win.WatchKey(vk, 10*time.Millisecond, w.IsForeground, toggles, stop)
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)

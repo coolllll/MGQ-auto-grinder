@@ -36,7 +36,7 @@ Recalibrate if you grind on a different map, or if the bot stops recognising a s
 
 1. Put the character on an open stretch of the world map, with room to walk left and right.
 2. Run `.\grinder.exe run`. It starts **paused**.
-3. Click into the game and press **Space** to start. Press **Space** again to pause.
+3. Click into the game and press **Space** to start. Press **Space** again to pause. Space only counts while the game window is in front, so typing in other windows won't start or stop the bot.
 
 Keep the game window in front: Windows only delivers the keys to the window you're using. If you switch to another window, the bot stops sending keys until the game is back in front.
 

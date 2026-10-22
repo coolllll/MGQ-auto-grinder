@@ -7,7 +7,7 @@ Plays the EXP grinding loop for the user: walks on the world map to find random 
 ## ADDED Requirements
 
 ### Requirement: Start and stop with Space
-The bot SHALL start paused and toggle between RUNNING and PAUSED each time the user presses Space. While PAUSED it MUST send no input to the game. Each toggle MUST be reported to the user.
+The bot SHALL start paused and toggle between RUNNING and PAUSED each time the user presses Space while the game window is in front. Presses while another window is in front MUST be ignored. While PAUSED it MUST send no input to the game. Each toggle MUST be reported to the user.
 
 #### Scenario: Start grinding
 - **WHEN** the bot is PAUSED and the user presses Space
@@ -20,6 +20,10 @@ The bot SHALL start paused and toggle between RUNNING and PAUSED each time the u
 #### Scenario: Holding Space
 - **WHEN** the user holds Space down
 - **THEN** the bot toggles once, not repeatedly
+
+#### Scenario: Space typed in another window
+- **WHEN** the user presses Space while another window is in front, for example while typing in a chat
+- **THEN** the bot ignores it and stays RUNNING or PAUSED as it was
 
 ### Requirement: Walk on the world map
 While RUNNING and the state is MAP, the bot SHALL walk the character by alternately holding the Left and Right arrow keys for a configured duration each, until the state changes.

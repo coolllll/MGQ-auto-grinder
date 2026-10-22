@@ -47,11 +47,24 @@ func (e *EdgeDetector) Pressed(down bool) bool {
 	return pressed
 }
 
+// ToggleGate counts presses of the toggle key only while the game is in front,
+// so typing the key in another window can't flip the bot.
+type ToggleGate struct {
+	edge EdgeDetector
+}
+
+// Pressed reports whether this sample is a press that should toggle the bot.
+// The edge is tracked even while the game isn't in front, so a key pressed
+// elsewhere and still held when the game comes to the front doesn't count.
+func (g *ToggleGate) Pressed(down, gameInFront bool) bool {
+	return g.edge.Pressed(down) && gameInFront
+}
+
 // WatchKey polls vk every interval and sends on presses each time the key goes
-// down, until stop is closed.
-func WatchKey(vk int, interval time.Duration, presses chan<- struct{}, stop <-chan struct{}) {
-	var edge EdgeDetector
-	edge.Pressed(KeyIsDown(vk)) // a key already held at start is not a press
+// down while inFront reports true, until stop is closed.
+func WatchKey(vk int, interval time.Duration, inFront func() bool, presses chan<- struct{}, stop <-chan struct{}) {
+	var gate ToggleGate
+	gate.Pressed(KeyIsDown(vk), false) // a key already held at start is not a press
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -59,7 +72,7 @@ func WatchKey(vk int, interval time.Duration, presses chan<- struct{}, stop <-ch
 		case <-stop:
 			return
 		case <-t.C:
-			if edge.Pressed(KeyIsDown(vk)) {
+			if gate.Pressed(KeyIsDown(vk), inFront()) {
 				select {
 				case presses <- struct{}{}:
 				default: // previous press not handled yet; drop this one

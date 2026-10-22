@@ -11,8 +11,8 @@ Grinding EXP in *Monster Girl Quest! Paradox RPG* (RPG Maker VX Ace) means hours
 - One-time calibration step: the user captures a reference of the world map and of a battle; the bot classifies live frames against these references.
 - On the map, the bot walks the character left and right to trigger random encounters.
 - In battle, the bot presses Z repeatedly until the battle ends.
-- Whenever the screen is neither map nor battle for longer than a short grace period (default ~3 s, covers encounter transitions and victory text), the bot stops. This includes the game-over screen.
-- The Space key toggles the bot between running and paused.
+- Whenever the screen is neither map nor battle for longer than a short grace period (default ~3 s, covers encounter transitions), the bot stops. This includes the game-over screen.
+- The Space key, pressed while the game window is in front, toggles the bot between running and paused.
 - The bot sends no input while the game window is not the foreground window.
 
 ## Capabilities
@@ -27,7 +27,7 @@ Grinding EXP in *Monster Girl Quest! Paradox RPG* (RPG Maker VX Ace) means hours
 ## Impact
 
 - New Go module in this repository (currently README-only); produces a single `.exe`.
-- Requires Go to be installed to build (`winget install GoLang.Go`); not currently installed on the dev machine.
+- Requires Go 1.22 or newer to build (`winget install GoLang.Go`).
 - Windows-only: depends on Win32 APIs for window lookup, screen capture, keyboard input, and key-state polling.
-- Target game: `Monster Girl Quest Part 3 - Copy` (RGSS3 / VX Ace, `WindowedRatio=2`). The game itself is not modified.
+- Target game: `Monster Girl Quest Part 3 - Copy` (RGSS3 / VX Ace, rendering at 640x480). The game itself is not modified.
 - Assumption to confirm during review: the 3-second grace period was proposed but not explicitly confirmed by the user; it is configurable.

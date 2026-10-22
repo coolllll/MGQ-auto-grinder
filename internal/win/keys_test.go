@@ -17,6 +17,25 @@ func TestEdgeDetectorHeldKeyTogglesOnce(t *testing.T) {
 	}
 }
 
+func TestToggleGateIgnoresPressesOutsideTheGame(t *testing.T) {
+	samples := []struct{ down, inFront, want bool }{
+		{false, false, false},
+		{true, false, false}, // space typed in another window
+		{false, false, false},
+		{true, false, false}, // held while switching to the game...
+		{true, true, false},  // ...still the same press, not a new one
+		{false, true, false},
+		{true, true, true}, // a fresh press in the game
+		{true, true, false},
+	}
+	var g ToggleGate
+	for i, s := range samples {
+		if got := g.Pressed(s.down, s.inFront); got != s.want {
+			t.Errorf("sample %d (down=%v inFront=%v): Pressed = %v, want %v", i, s.down, s.inFront, got, s.want)
+		}
+	}
+}
+
 func TestVKByName(t *testing.T) {
 	if vk, err := VKByName("Space"); err != nil || vk != 0x20 {
 		t.Errorf("VKByName(Space) = %#x, %v; want 0x20, nil", vk, err)
