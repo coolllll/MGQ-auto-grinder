@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"image"
@@ -42,6 +43,7 @@ func main() {
 		args = []string{"run"}
 	}
 
+	code := 0
 	var err error
 	switch {
 	case args[0] == "run":
@@ -52,12 +54,22 @@ func main() {
 		err = debug(args[1], args[2:])
 	default:
 		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+		code = 2
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		code = 1
 	}
+	exit(code)
+}
+
+// exit keeps a double-clicked console window open so its output can be read.
+func exit(code int) {
+	if win.OwnsConsole() {
+		fmt.Print("\nPress Enter to close this window.")
+		bufio.NewReader(os.Stdin).ReadString('\n')
+	}
+	os.Exit(code)
 }
 
 func baseDir() string {

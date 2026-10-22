@@ -17,8 +17,11 @@ import (
 const GameClass = "RGSS Player"
 
 var (
-	user32 = windows.NewLazySystemDLL("user32.dll")
-	gdi32  = windows.NewLazySystemDLL("gdi32.dll")
+	user32   = windows.NewLazySystemDLL("user32.dll")
+	gdi32    = windows.NewLazySystemDLL("gdi32.dll")
+	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
+
+	procGetConsoleProcessList = kernel32.NewProc("GetConsoleProcessList")
 
 	procEnumWindows         = user32.NewProc("EnumWindows")
 	procGetClassNameW       = user32.NewProc("GetClassNameW")
@@ -134,6 +137,15 @@ func windowText(hwnd uintptr) string {
 // Call it once at startup, before any other call in this package.
 func SetDPIAware() {
 	procSetProcessDPIAware.Call()
+}
+
+// OwnsConsole reports whether this process is alone in its console window,
+// which means it was started by double-clicking rather than from a terminal,
+// and the window will close as soon as the process exits.
+func OwnsConsole() bool {
+	pids := make([]uint32, 2)
+	n, _, _ := procGetConsoleProcessList.Call(uintptr(unsafe.Pointer(&pids[0])), uintptr(len(pids)))
+	return n == 1
 }
 
 // Beep plays the system warning sound.
