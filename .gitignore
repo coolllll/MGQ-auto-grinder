@@ -1,0 +1,7 @@
+# Build output
+grinder.exe
+*.exe
+
+# Per-machine calibration and settings, created next to the exe
+refs/
+config.json
