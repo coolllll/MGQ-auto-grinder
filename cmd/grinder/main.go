@@ -488,8 +488,8 @@ func debugClassify() error {
 				continue
 			}
 			s := cls.Score(img)
-			logf("%-7v window=%.3f (min %.2f)  map=%.3f (min %.2f)",
-				cls.StateFor(s), s.Window, cfg.WindowMinSimilarity, s.Map, cfg.MapMinSimilarity)
+			logf("%-7v window=%.3f (min %.2f)  map=%.3f (min %.2f)  menuBorder=%.2f",
+				cls.StateFor(s), s.Window, cfg.WindowMinSimilarity, s.Map, cfg.MapMinSimilarity, s.MenuBorder)
 		}
 	}
 }

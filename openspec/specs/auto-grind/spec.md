@@ -67,7 +67,7 @@ When the state has been NEITHER continuously for longer than a configured grace 
 - **THEN** the bot keeps running without pausing
 
 #### Scenario: Another screen appears
-- **WHEN** a screen that is neither the world map nor a battle, such as a town or a menu, stays on screen past the grace period
+- **WHEN** a screen that is neither the world map, a battle, nor the game menu, such as a town, stays on screen past the grace period
 - **THEN** the bot pauses and alerts the user
 
 #### Scenario: Game-over screen is not pressed through
@@ -84,3 +84,14 @@ The bot SHALL send no keystrokes while the game window is not the foreground win
 #### Scenario: User returns to the game
 - **WHEN** the game window becomes the foreground window again while RUNNING
 - **THEN** the bot resumes acting on the detected state
+
+### Requirement: Pause on the game menu
+When the state is MENU, the bot SHALL immediately switch to PAUSED, release all keys, alert the user, and stay PAUSED until the user presses Space, without waiting for the grace period. The bot MUST NOT start while the game menu is showing.
+
+#### Scenario: Menu opened while running
+- **WHEN** the bot is RUNNING and the user opens the game menu
+- **THEN** the bot releases held keys, pauses at once, alerts the user, and sends no further input
+
+#### Scenario: Space pressed while the menu is showing
+- **WHEN** the bot is PAUSED, the game menu is showing, and the user presses Space
+- **THEN** the bot stays PAUSED, keeps its current map reference, and reports that the menu must be closed first

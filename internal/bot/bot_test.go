@@ -316,6 +316,51 @@ func TestRunnerStartCaptureFailureStaysPaused(t *testing.T) {
 	wantKeys(t, r)
 }
 
+func TestMenuPausesAtOnce(t *testing.T) {
+	b, r := newRunning(t)
+	b.Step(at(0), seen(detect.Map))
+	wantKeys(t, r, "down Left")
+
+	b.Step(at(50), seen(detect.Menu))
+	wantKeys(t, r, "up Left")
+	if b.Mode() != Paused {
+		t.Fatalf("mode = %v on the first menu frame, want PAUSED", b.Mode())
+	}
+	if len(r.alerts) != 1 || !strings.Contains(r.alerts[0], "menu") {
+		t.Errorf("alerts = %q, want one naming the menu", r.alerts)
+	}
+
+	b.Step(at(100), seen(detect.Menu))
+	b.Step(at(150), seen(detect.Battle))
+	wantKeys(t, r)
+}
+
+func TestRunnerRefusesToStartOnTheMenu(t *testing.T) {
+	r := &recorder{}
+	w := &fakeWindow{exists: true, foreground: true}
+	cls := &menuClassifier{}
+	saved := false
+	run := &Runner{Bot: New(cfg, r, r), Win: w, Cls: cls, OnMapReference: func(image.Image) { saved = true }}
+
+	run.Toggle()
+	if run.Bot.Mode() != Paused {
+		t.Fatalf("mode = %v, want PAUSED while the menu is showing", run.Bot.Mode())
+	}
+	if cls.sets != 0 || saved {
+		t.Errorf("sets=%d saved=%v, want the map reference untouched", cls.sets, saved)
+	}
+	if len(r.alerts) != 1 || !strings.Contains(r.alerts[0], "menu") {
+		t.Errorf("alerts = %q, want one naming the menu", r.alerts)
+	}
+	wantKeys(t, r)
+}
+
+// menuClassifier sees the game menu in every frame.
+type menuClassifier struct{ sets int }
+
+func (c *menuClassifier) Classify(image.Image) detect.State { return detect.Menu }
+func (c *menuClassifier) SetMapReference(image.Image)       { c.sets++ }
+
 func TestRunnerRestartRetakesMapReference(t *testing.T) {
 	run, _, w, cls := newPausedRunner()
 	run.Toggle() // start: capture 1

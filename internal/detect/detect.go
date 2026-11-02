@@ -22,6 +22,7 @@ const (
 	Neither State = iota
 	Map
 	Battle
+	Menu
 )
 
 func (s State) String() string {
@@ -30,6 +31,8 @@ func (s State) String() string {
 		return "MAP"
 	case Battle:
 		return "BATTLE"
+	case Menu:
+		return "MENU"
 	default:
 		return "NEITHER"
 	}
@@ -78,10 +81,14 @@ type Params struct {
 func DefaultParams() Params {
 	return Params{
 		WindowBand:          image.Rect(0, 368, NativeW, NativeH),
-		WindowMinSimilarity: 0.55,
-		MapMinSimilarity:    0.55,
+		WindowMinSimilarity: 0.40,
+		MapMinSimilarity:    0.70,
 	}
 }
+
+// menuBorderMin is the MenuBorder score from which a frame counts as the game
+// menu. The menu scores 0.87-0.89 and everything else at most 0.16.
+const menuBorderMin = 0.5
 
 // Refs are the calibration images.
 type Refs struct {
@@ -95,6 +102,9 @@ type Scores struct {
 	Window float64
 	// Map is the whole frame's similarity to the map reference.
 	Map float64
+	// MenuBorder is how strongly the frame shows the game menu's left panel
+	// border. It doesn't depend on the references.
+	MenuBorder float64
 }
 
 // Classifier compares frames with the calibration references.
@@ -128,18 +138,23 @@ func (c *Classifier) SetMapReference(img image.Image) {
 func (c *Classifier) Score(frame image.Image) Scores {
 	f := Normalize(frame)
 	return Scores{
-		Window: histogramOf(f, c.p.WindowBand).intersect(c.windowHist),
-		Map:    histogramOf(f, f.Bounds()).intersect(c.mapHist),
+		Window:     histogramOf(f, c.p.WindowBand).intersect(c.windowHist),
+		Map:        histogramOf(f, f.Bounds()).intersect(c.mapHist),
+		MenuBorder: menuBorderScore(f),
 	}
 }
 
 // StateFor turns scores into a state.
 //
+// The game menu uses the same blue windows as a battle, so it is checked first.
 // Battle screens always have the battle windows along the bottom, whatever is
 // happening above them, so a matching window band means BATTLE even when the
-// battle backdrop looks like the map. Checking it first also keeps such
-// battles out of MAP.
+// battle backdrop looks like the map. Checking it before the map also keeps
+// such battles out of MAP.
 func (c *Classifier) StateFor(s Scores) State {
+	if s.MenuBorder >= menuBorderMin {
+		return Menu
+	}
 	if s.Window >= c.p.WindowMinSimilarity {
 		return Battle
 	}
@@ -152,6 +167,36 @@ func (c *Classifier) StateFor(s Scores) State {
 // Classify scores a frame and returns its state.
 func (c *Classifier) Classify(frame image.Image) State {
 	return c.StateFor(c.Score(frame))
+}
+
+// menuBorderScore looks for the tall white border of the game menu's left
+// panel, which runs down the screen near x=162. It must show both above and
+// below the status row height, and stand out from the pixels beside it, so that
+// white maps, white flashes and the battle status row don't count.
+func menuBorderScore(img *image.RGBA) float64 {
+	const (
+		firstX, lastX = 160, 164
+		beside        = 14
+		bright        = 190
+	)
+	brightShare := func(x, y0, y1 int) float64 {
+		n := 0
+		for y := y0; y < y1; y++ {
+			p := img.Pix[img.PixOffset(x, y):]
+			if p[0] >= bright && p[1] >= bright && p[2] >= bright {
+				n++
+			}
+		}
+		return float64(n) / float64(y1-y0)
+	}
+	line := func(x, y0, y1 int) float64 {
+		return brightShare(x, y0, y1) - max(brightShare(x-beside, y0, y1), brightShare(x+beside, y0, y1))
+	}
+	var best float64
+	for x := firstX; x <= lastX; x++ {
+		best = max(best, min(line(x, 10, 280), line(x, 370, 470)))
+	}
+	return best
 }
 
 // Similarity is the colour-histogram overlap of two whole frames, 0-1.

@@ -36,7 +36,8 @@ type Runner struct {
 
 // Toggle starts or pauses the bot. Starting first captures the current screen
 // as the map reference, since the user starts the bot while standing on the
-// map; if the capture fails, the bot stays paused.
+// map; if the capture fails or shows the game menu, the bot stays paused and
+// keeps its reference.
 func (r *Runner) Toggle() {
 	if r.Bot.Mode() == Running {
 		r.Bot.Toggle()
@@ -45,6 +46,10 @@ func (r *Runner) Toggle() {
 	img, err := r.Win.Capture()
 	if err != nil {
 		r.Bot.n.Alert("Not started: couldn't capture the map reference: " + err.Error())
+		return
+	}
+	if r.Cls.Classify(img) == detect.Menu {
+		r.Bot.n.Alert("Not started: the game menu is open. Close it and press the toggle key again.")
 		return
 	}
 	r.Cls.SetMapReference(img)

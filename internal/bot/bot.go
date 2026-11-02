@@ -143,6 +143,9 @@ func (b *Bot) Step(now time.Time, obs Observation) {
 		b.walk(now)
 	case detect.Battle:
 		b.mashZ(now)
+	case detect.Menu:
+		// No grace period: every Z pressed here could select a menu item.
+		b.pause("Stopped: the game menu is open. Close it and press the toggle key to resume.", true)
 	case detect.Neither:
 		// No input at all: pressing Z on the game-over screen would go on
 		// to the title menu.

@@ -226,6 +226,57 @@ func TestBattleBackdropLikeTheMap(t *testing.T) {
 	}
 }
 
+// TestSnowfieldSpot is the regression test for a snowfield grinding spot, where
+// a white attack flash made battle frames score low on the window band and high
+// against the white map, so the bot pressed arrow keys in battle. The game menu
+// also read as a battle there, so the bot pressed Z in it.
+func TestSnowfieldSpot(t *testing.T) {
+	c := NewClassifier(Refs{Battle: loadFixture(t, "battle_ref_akaname.png"), Map: loadFixture(t, "map_snow.png")}, DefaultParams())
+
+	for _, tc := range []struct {
+		file string
+		want State
+	}{
+		{"battle_snow_flash.png", Battle},
+		{"battle_snow_flash2.png", Battle},
+		{"map_snow.png", Map},
+		{"map_snow_walking.png", Map},
+		{"menu_snow.png", Menu},
+		{"menu_snow2.png", Menu},
+	} {
+		s := c.Score(loadFixture(t, tc.file))
+		t.Logf("%s: %+v", tc.file, s)
+		if got := c.StateFor(s); got != tc.want {
+			t.Errorf("%s = %v, want %v", tc.file, got, tc.want)
+		}
+	}
+}
+
+// TestOnlyTheMenuHasTheMenuBorder checks every non-menu fixture, plus a
+// full-white frame, because a plain "white column" test would also fire on an
+// all-white area of the map.
+func TestOnlyTheMenuHasTheMenuBorder(t *testing.T) {
+	c := NewClassifier(Refs{Battle: loadFixture(t, "battle.png")}, DefaultParams())
+
+	white := image.NewRGBA(image.Rect(0, 0, NativeW, NativeH))
+	fill(white, white.Bounds(), color.RGBA{255, 255, 255, 255})
+	if got := c.Classify(white); got == Menu {
+		t.Error("an all-white frame classified MENU")
+	}
+
+	for _, f := range []string{
+		"map.png", "map_scrolled.png", "map_spot2.png", "map_snow.png", "map_snow_walking.png",
+		"battle.png", "battle_command.png", "battle_skill_menu.png", "battle_flash.png",
+		"battle_victory.png", "battle_level_up.png", "battle_spot2.png",
+		"battle_snow_flash.png", "battle_snow_flash2.png", "encounter_swirl.png", "black_fade.png",
+	} {
+		s := c.Score(loadFixture(t, f))
+		if s.MenuBorder >= menuBorderMin {
+			t.Errorf("%s: menu border score %.2f, want below %.2f", f, s.MenuBorder, menuBorderMin)
+		}
+	}
+}
+
 func TestRefsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := LoadRefs(dir); !errors.Is(err, ErrMissingRefs) {
