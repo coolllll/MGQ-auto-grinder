@@ -5,3 +5,6 @@ grinder.exe
 # Per-machine calibration and settings, created next to the exe
 refs/
 config.json
+
+# Game screenshots used as test fixtures; kept locally only
+internal/detect/testdata/
